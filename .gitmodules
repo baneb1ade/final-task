@@ -1,0 +1,9 @@
+[submodule "auth-service"]
+	path = auth-service
+	url = https://github.com/baneb1ade/auth-grpc
+[submodule "exchanger-service"]
+	path = exchanger-service
+	url = https://github.com/baneb1ade/exchanger-grpc
+[submodule "wallet-service"]
+	path = wallet-service
+	url = https://github.com/baneb1ade/wallet-service

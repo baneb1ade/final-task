@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres_container
+    environment:
+      POSTGRES_USER: postgres_user
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: postgres_db
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data/pgdata
+    command: >
+      postgres -c max_connections=1000
+               -c shared_buffers=256MB
+               -c effective_cache_size=768MB
+               -c maintenance_work_mem=64MB
+               -c checkpoint_completion_target=0.7
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres_user -d postgres_db" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    networks:
+      - app_network
+
+  redis:
+    image: redis:latest
+    container_name: redis_container
+    environment:
+      - REDIS_PASSWORD=redis
+      - REDIS_USER=redis
+      - REDIS_USER_PASSWORD=redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redisdata:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command: >
+      sh -c '
+        mkdir -p /usr/local/etc/redis &&
+        echo "bind 0.0.0.0" > /usr/local/etc/redis/redis.conf &&
+        echo "requirepass redis" >> /usr/local/etc/redis/redis.conf &&
+        echo "appendonly yes" >> /usr/local/etc/redis/redis.conf &&
+        echo "appendfsync everysec" >> /usr/local/etc/redis/redis.conf &&
+        echo "user default on nopass ~* +@all" > /usr/local/etc/redis/users.acl &&
+        echo "user redis on >redis ~* +@all" >> /usr/local/etc/redis/users.acl &&
+        redis-server /usr/local/etc/redis/redis.conf --aclfile /usr/local/etc/redis/users.acl
+      '
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "redis", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    networks:
+      - app_network
+
+  wallet:
+    depends_on:
+      - postgres
+    build:
+      context: ./wallet-service
+      dockerfile: Dockerfile
+    container_name: wallet_service_container
+    env_file:
+      - ./wallet-service/config.env
+    ports:
+      - "8080:8080"
+    networks:
+      - app_network
+
+  auth:
+    depends_on:
+      - postgres
+      - wallet
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth_service_container
+    env_file:
+      - ./auth-service/config.env
+    ports:
+      - "44045:44044"
+    networks:
+      - app_network
+
+  exchanger:
+    depends_on:
+      - postgres
+      - wallet
+    build:
+      context: ./exchanger-service
+      dockerfile: Dockerfile
+    container_name: exchanger_service_container
+    env_file:
+      - ./exchanger-service/config.env
+    ports:
+      - "44044:44044"
+    networks:
+      - app_network
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  app_network:
+    driver: bridge
